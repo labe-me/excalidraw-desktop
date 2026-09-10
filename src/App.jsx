@@ -7,12 +7,15 @@ import {
   loadFromBlob,
   serializeAsJSON,
 } from "@excalidraw/excalidraw";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
 import "@excalidraw/excalidraw/index.css";
 import "./App.css";
 
 window.EXCALIDRAW_ASSET_PATH = "/";
+
+const APP_NAME = "Excalidraw Desktop";
 
 const FILE_FILTERS = [
   {
@@ -29,6 +32,17 @@ const getFileName = (path) => path.split(/[\\/]/).pop() || "Untitled.excalidraw"
 
 const getDocumentName = (path) =>
   getFileName(path).replace(/\.(excalidraw|json)$/i, "");
+
+const updateWindowTitle = (path = null) => {
+  const title = `${path ? getFileName(path) : "Untitled"} — ${APP_NAME}`;
+  document.title = title;
+
+  if (isTauri()) {
+    void getCurrentWindow()
+      .setTitle(title)
+      .catch((error) => console.warn("Could not update the window title", error));
+  }
+};
 
 const ensureExcalidrawExtension = (path) =>
   /\.(excalidraw|json)$/i.test(path) ? path : `${path}.excalidraw`;
@@ -75,6 +89,10 @@ function App() {
 
     localStorage.setItem("excalidrawState", JSON.stringify(appState));
     localStorage.setItem("excalidrawElements", JSON.stringify(scene.elements));
+  }, []);
+
+  useEffect(() => {
+    updateWindowTitle();
   }, []);
 
   useEffect(() => {
@@ -141,7 +159,7 @@ function App() {
       setDocumentName(name);
       setInitialData(nextScene);
       setDocumentKey((key) => key + 1);
-      document.title = `${getFileName(path)} — Excalidraw Desktop`;
+      updateWindowTitle(path);
       persistSession(nextScene);
     } catch (error) {
       showError("open", error);
@@ -193,7 +211,7 @@ function App() {
         ignoreNextChangeRef.current = true;
         api.updateScene({ appState: { name } });
         hasUnsavedChangesRef.current = false;
-        document.title = `${getFileName(path)} — Excalidraw Desktop`;
+        updateWindowTitle(path);
         persistSession({
           elements: api.getSceneElementsIncludingDeleted(),
           appState,
