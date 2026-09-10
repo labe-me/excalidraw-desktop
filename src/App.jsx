@@ -34,6 +34,16 @@ const getFileName = (path) => path.split(/[\\/]/).pop() || "Untitled.excalidraw"
 const getDocumentName = (path) =>
   getFileName(path).replace(/\.(excalidraw|json)$/i, "");
 
+const getParentFolderName = (path) => {
+  const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  if (separatorIndex < 0) {
+    return "";
+  }
+
+  const parent = path.slice(0, separatorIndex);
+  return parent.split(/[\\/]/).pop() || parent || "/";
+};
+
 const updateWindowTitle = (path = null) => {
   const title = `${path ? getFileName(path) : "Untitled"} — ${APP_NAME}`;
   document.title = title;
@@ -70,6 +80,7 @@ function App() {
   const [initialData, setInitialData] = useState(initialSession.current);
   const [documentKey, setDocumentKey] = useState(0);
   const [documentName, setDocumentName] = useState(null);
+  const [recentDocuments, setRecentDocuments] = useState([]);
   const excalidrawAPIRef = useRef(null);
   const activeFilePathRef = useRef(null);
   const sceneRef = useRef(initialSession.current);
@@ -113,6 +124,11 @@ function App() {
 
     operationInProgressRef.current = true;
     try {
+      const shouldLoad = await invoke("claim_document_window", { path });
+      if (!shouldLoad) {
+        return;
+      }
+
       const contents = await invoke("read_document", { path });
       const currentScene = sceneRef.current;
       const loadedScene = await loadFromBlob(
@@ -138,6 +154,11 @@ function App() {
       updateWindowTitle(path);
       persistSession(nextScene);
     } catch (error) {
+      if (isTauri()) {
+        void invoke("release_document_window", { path }).catch((releaseError) =>
+          console.warn("Could not release the drawing window", releaseError),
+        );
+      }
       showError("open", error);
     } finally {
       operationInProgressRef.current = false;
@@ -198,6 +219,58 @@ function App() {
     }
   }, [showError]);
 
+  const clearRecentDocuments = useCallback(async () => {
+    try {
+      await invoke("clear_recent_documents");
+    } catch (error) {
+      console.error("Could not clear recent drawings", error);
+      excalidrawAPIRef.current?.setToast({
+        message: `Could not clear recent drawings: ${error?.message || error}`,
+        duration: 5000,
+        closable: true,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let stopListening;
+
+    const startListening = async () => {
+      const unlisten = await listen("recent-documents-changed", (event) => {
+        if (!cancelled && Array.isArray(event.payload)) {
+          setRecentDocuments(event.payload);
+        }
+      });
+
+      if (cancelled) {
+        unlisten();
+        return;
+      }
+
+      stopListening = unlisten;
+      const documents = await invoke("get_recent_documents");
+      if (!cancelled) {
+        setRecentDocuments(documents);
+      }
+    };
+
+    void startListening().catch((error) => {
+      if (!cancelled) {
+        console.warn("Could not load recent drawings", error);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      stopListening?.();
+    };
+  }, []);
+
   useEffect(() => {
     if (!isTauri()) {
       return undefined;
@@ -231,7 +304,7 @@ function App() {
 
       stopListening = unlisten;
 
-      const assignedPath = await invoke("take_window_open_document");
+      const assignedPath = await invoke("get_window_open_document");
       if (!cancelled && assignedPath) {
         await loadDocumentInCurrentWindow(assignedPath);
       }
@@ -379,6 +452,28 @@ function App() {
           >
             Open…
           </MainMenu.Item>
+          <MainMenu.Group title="Open Recent">
+            {recentDocuments.length > 0 ? (
+              <>
+                {recentDocuments.map((path) => (
+                  <MainMenu.Item
+                    key={path}
+                    onSelect={() => openDocuments([path])}
+                    shortcut={getParentFolderName(path)}
+                    title={path}
+                  >
+                    {getFileName(path)}
+                  </MainMenu.Item>
+                ))}
+                <MainMenu.Separator />
+                <MainMenu.Item onSelect={() => clearRecentDocuments()}>
+                  Clear Recent
+                </MainMenu.Item>
+              </>
+            ) : (
+              <MainMenu.Item disabled>No recent files</MainMenu.Item>
+            )}
+          </MainMenu.Group>
           <MainMenu.Item
             onSelect={() => saveDocument(false)}
             shortcut={`${primaryModifier}+S`}
