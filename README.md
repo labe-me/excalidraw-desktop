@@ -12,13 +12,14 @@ Run Excalidraw completely offline as a local desktop app, ideal for diagrams, qu
 - ✅ **Cross-platform** — Mac, Linux, and Windows builds available
 - ✅ **Lightweight** — built with Tauri (much smaller than Electron)
 - ✅ **Session persistence** — your current drawing stays intact between app launches
+- ✅ **Native file editing** — open a local `.excalidraw` file and save changes back to it
 
 ---
 
-## 🚨 Important Notice
+## 💾 Local files
 
-> ⚠️ **Saved files are stored in your system's Downloads folder**  
-> When you manually save or export your drawing, the file will be written to your OS default **Downloads** directory.  
+Use **Cmd/Ctrl+O** to open an existing drawing. **Cmd/Ctrl+S** saves changes
+back to that file, while **Cmd/Ctrl+Shift+S** lets you choose a new location.
 
 ---
 
@@ -49,4 +50,3 @@ This project is licensed under the [MIT License](LICENSE).
 
 Issues, feature requests, and pull requests are welcome.  
 Let’s make offline sketching better together! ✨
-
