@@ -8,8 +8,9 @@ import {
   serializeAsJSON,
 } from "@excalidraw/excalidraw";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { confirm, open, save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import "@excalidraw/excalidraw/index.css";
 import "./App.css";
 
@@ -101,42 +102,13 @@ function App() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [persistSession]);
 
-  const openDocument = useCallback(async () => {
+  const loadDocumentInCurrentWindow = useCallback(async (path) => {
     if (operationInProgressRef.current) {
       return;
     }
 
     operationInProgressRef.current = true;
     try {
-      if (
-        hasUnsavedChangesRef.current &&
-        sceneRef.current.elements.length > 0
-      ) {
-        const shouldDiscard = await confirm(
-          "Opening another drawing will discard your unsaved changes.",
-          {
-            title: "Open drawing",
-            kind: "warning",
-            buttons: { ok: "Discard and Open", cancel: "Cancel" },
-          },
-        );
-
-        if (!shouldDiscard) {
-          return;
-        }
-      }
-
-      const path = await open({
-        multiple: false,
-        directory: false,
-        title: "Open Excalidraw drawing",
-        filters: FILE_FILTERS,
-      });
-
-      if (!path) {
-        return;
-      }
-
       const contents = await invoke("read_document", { path });
       const currentScene = sceneRef.current;
       const loadedScene = await loadFromBlob(
@@ -167,6 +139,101 @@ function App() {
       operationInProgressRef.current = false;
     }
   }, [persistSession, showError]);
+
+  const openDocuments = useCallback(
+    async (requestedPaths = null) => {
+      try {
+        const selection =
+          requestedPaths ||
+          (await open({
+            multiple: true,
+            directory: false,
+            title: "Open Excalidraw drawings",
+            filters: FILE_FILTERS,
+          }));
+
+        if (!selection) {
+          return;
+        }
+
+        const paths = Array.isArray(selection) ? selection : [selection];
+        const canReuseCurrentWindow =
+          !operationInProgressRef.current &&
+          !activeFilePathRef.current &&
+          !hasUnsavedChangesRef.current &&
+          sceneRef.current.elements.length === 0;
+        const pathsForNewWindows = canReuseCurrentWindow
+          ? paths.slice(1)
+          : paths;
+
+        if (canReuseCurrentWindow && paths[0]) {
+          await loadDocumentInCurrentWindow(paths[0]);
+        }
+
+        await Promise.all(
+          pathsForNewWindows.map((path) =>
+            invoke("open_document_window", { path }),
+          ),
+        );
+      } catch (error) {
+        showError("open", error);
+      }
+    },
+    [loadDocumentInCurrentWindow, showError],
+  );
+
+  useEffect(() => {
+    if (!isTauri()) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let stopListening;
+
+    const openPendingDocuments = async () => {
+      try {
+        const paths = await invoke("take_pending_open_documents");
+        if (!cancelled && paths.length > 0) {
+          await openDocuments(paths);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          showError("open", error);
+        }
+      }
+    };
+
+    const startListening = async () => {
+      const unlisten = await listen("open-documents-requested", () => {
+        void openPendingDocuments();
+      });
+
+      if (cancelled) {
+        unlisten();
+        return;
+      }
+
+      stopListening = unlisten;
+
+      const assignedPath = await invoke("take_window_open_document");
+      if (!cancelled && assignedPath) {
+        await loadDocumentInCurrentWindow(assignedPath);
+      }
+
+      await openPendingDocuments();
+    };
+
+    void startListening().catch((error) => {
+      if (!cancelled) {
+        showError("open", error);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      stopListening?.();
+    };
+  }, [loadDocumentInCurrentWindow, openDocuments, showError]);
 
   const saveDocument = useCallback(
     async (saveAs = false) => {
@@ -245,7 +312,7 @@ function App() {
       event.stopImmediatePropagation();
 
       if (key === "o") {
-        void openDocument();
+        void openDocuments();
       } else {
         void saveDocument(event.shiftKey);
       }
@@ -253,7 +320,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [openDocument, saveDocument]);
+  }, [openDocuments, saveDocument]);
 
   const handleChange = useCallback((elements, appState, files) => {
     sceneRef.current = { elements, appState, files };
@@ -283,7 +350,7 @@ function App() {
       >
         <MainMenu>
           <MainMenu.Item
-            onSelect={openDocument}
+            onSelect={() => openDocuments()}
             shortcut={`${primaryModifier}+O`}
           >
             Open…
@@ -318,7 +385,7 @@ function App() {
             </WelcomeScreen.Center.Heading>
             <WelcomeScreen.Center.Menu>
               <WelcomeScreen.Center.MenuItem
-                onSelect={openDocument}
+                onSelect={() => openDocuments()}
                 shortcut={`${primaryModifier}+O`}
               >
                 Open drawing
