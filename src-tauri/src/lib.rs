@@ -13,7 +13,7 @@ use std::{
 use tauri::Emitter;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
-static NEXT_DOCUMENT_WINDOW_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_WINDOW_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Default)]
 struct PendingOpenDocuments(Mutex<Vec<PathBuf>>);
@@ -81,6 +81,16 @@ fn documents_from_args(args: impl IntoIterator<Item = OsString>) -> Vec<PathBuf>
         .collect()
 }
 
+fn next_window_label(app: &tauri::AppHandle, prefix: &str) -> String {
+    loop {
+        let id = NEXT_WINDOW_ID.fetch_add(1, Ordering::Relaxed);
+        let candidate = format!("{prefix}-{id}");
+        if app.get_webview_window(&candidate).is_none() {
+            return candidate;
+        }
+    }
+}
+
 #[tauri::command]
 fn read_document(path: PathBuf) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|error| format!("Failed to read {}: {error}", path.display()))
@@ -113,13 +123,7 @@ fn open_document_window(
     documents: tauri::State<'_, WindowOpenDocuments>,
     path: PathBuf,
 ) -> Result<(), String> {
-    let label = loop {
-        let id = NEXT_DOCUMENT_WINDOW_ID.fetch_add(1, Ordering::Relaxed);
-        let candidate = format!("document-{id}");
-        if app.get_webview_window(&candidate).is_none() {
-            break candidate;
-        }
-    };
+    let label = next_window_label(&app, "document");
 
     documents.assign(label.clone(), path.clone())?;
 
@@ -145,6 +149,18 @@ fn open_document_window(
     Ok(())
 }
 
+#[tauri::command]
+fn open_new_window(app: tauri::AppHandle) -> Result<(), String> {
+    let label = next_window_label(&app, "new");
+
+    WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
+        .title("Untitled — Excalidraw Desktop")
+        .inner_size(1000.0, 700.0)
+        .build()
+        .map(|_| ())
+        .map_err(|error| format!("Failed to open a new window: {error}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pending = PendingOpenDocuments::default();
@@ -161,7 +177,8 @@ pub fn run() {
             write_document,
             take_pending_open_documents,
             take_window_open_document,
-            open_document_window
+            open_document_window,
+            open_new_window
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

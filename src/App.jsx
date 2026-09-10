@@ -49,6 +49,10 @@ const ensureExcalidrawExtension = (path) =>
   /\.(excalidraw|json)$/i.test(path) ? path : `${path}.excalidraw`;
 
 const loadSession = () => {
+  if (isTauri() && getCurrentWindow().label.startsWith("new-")) {
+    return { appState: {}, elements: [], files: {} };
+  }
+
   try {
     return {
       appState: JSON.parse(localStorage.getItem("excalidrawState")) || {},
@@ -182,6 +186,18 @@ function App() {
     [loadDocumentInCurrentWindow, showError],
   );
 
+  const openNewWindow = useCallback(async () => {
+    if (!isTauri()) {
+      return;
+    }
+
+    try {
+      await invoke("open_new_window");
+    } catch (error) {
+      showError("open", error);
+    }
+  }, [showError]);
+
   useEffect(() => {
     if (!isTauri()) {
       return undefined;
@@ -304,14 +320,16 @@ function App() {
       }
 
       const key = event.key.toLowerCase();
-      if (key !== "o" && key !== "s") {
+      if (key !== "n" && key !== "o" && key !== "s") {
         return;
       }
 
       event.preventDefault();
       event.stopImmediatePropagation();
 
-      if (key === "o") {
+      if (key === "n") {
+        void openNewWindow();
+      } else if (key === "o") {
         void openDocuments();
       } else {
         void saveDocument(event.shiftKey);
@@ -320,7 +338,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [openDocuments, saveDocument]);
+  }, [openDocuments, openNewWindow, saveDocument]);
 
   const handleChange = useCallback((elements, appState, files) => {
     sceneRef.current = { elements, appState, files };
@@ -349,6 +367,12 @@ function App() {
         }}
       >
         <MainMenu>
+          <MainMenu.Item
+            onSelect={() => openNewWindow()}
+            shortcut={`${primaryModifier}+N`}
+          >
+            New
+          </MainMenu.Item>
           <MainMenu.Item
             onSelect={() => openDocuments()}
             shortcut={`${primaryModifier}+O`}

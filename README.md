@@ -18,8 +18,9 @@ Run Excalidraw completely offline as a local desktop app, ideal for diagrams, qu
 
 ## 💾 Local files
 
-Use **Cmd/Ctrl+O** to open an existing drawing. **Cmd/Ctrl+S** saves changes
-back to that file, while **Cmd/Ctrl+Shift+S** lets you choose a new location.
+Use **Cmd/Ctrl+N** to open a new blank drawing in its own window and
+**Cmd/Ctrl+O** to open an existing drawing. **Cmd/Ctrl+S** saves changes back
+to that file, while **Cmd/Ctrl+Shift+S** lets you choose a new location.
 
 ---
 
