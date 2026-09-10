@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "excalidraw-desktop",
+  "productName": "Excalidraw Desktop",
   "version": "0.1.0",
   "identifier": "ch.ricefield.excalidraw-desktop",
   "build": {
@@ -33,7 +33,7 @@
         "role": "Editor",
         "rank": "Owner",
         "exportedType": {
-          "identifier": "com.excalidraw.excalidraw",
+          "identifier": "ch.ricefield.excalidraw-document",
           "conformsTo": ["public.json"]
         }
       }
